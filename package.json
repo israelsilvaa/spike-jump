@@ -1,0 +1,10 @@
+{
+  "name": "spike-jump",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Spike Jump: jogo de vôlei de praia para celular, com ranking no Netlify Blobs",
+  "dependencies": {
+    "@netlify/blobs": "^8.1.0"
+  }
+}
