@@ -27,8 +27,8 @@ button{font-family:inherit}
 
 /* controles */
 #controls{flex:0 0 auto;display:flex;justify-content:space-between;align-items:stretch;gap:14px;
-  height:calc(112px + env(safe-area-inset-bottom));
-  padding:12px 16px calc(12px + env(safe-area-inset-bottom));
+  height:calc(180px + env(safe-area-inset-bottom));
+  padding:12px 16px calc(76px + env(safe-area-inset-bottom));
   background:linear-gradient(#d9a95c,#b98443);border-top:4px solid #8a5d2a}
 #pad{display:flex;gap:10px;flex:0 0 auto;touch-action:none}
 .btn{display:flex;align-items:center;justify-content:center;border-radius:20px;background:var(--plum);
@@ -237,7 +237,7 @@ const Snd={
 let state='menu', stateT=0, serveDelay=1;
 let score=0, lives=3, level=1, pointsWon=0, streak=0, touches=0, rally=0;
 const P={x:90,y:GROUND,vx:0,vy:0,air:false,run:0,swing:0};
-const C={x:285,y:GROUND,run:0,swing:0,reactT:0,err:0,home:285};
+const C={x:285,y:GROUND,run:0,swing:0,reactT:0,err:0,home:285,pt:0};
 const B={x:130,y:GROUND-BR,vx:0,vy:0,rot:0,cd:0,live:false,last:'',cpuTouched:false,lastSpike:false};
 let jumpBuf=0, shake=0, netWob=0, netT=0, bannerT=0, bannerTxt='';
 let particles=[], rings=[], popups=[], trail=[];
@@ -248,7 +248,7 @@ const mult=()=>Math.min(5,1+streak);
 // o adversário fica mais esperto a cada nível e a cada devolução dentro da mesma jogada
 const eff=()=>level+rally*.6;
 const cpuSpeed=()=>Math.min(400,120+eff()*28);
-const cpuReact=()=>Math.max(.1,.55-eff()*.05);
+const cpuReact=()=>Math.max(.1,.65-eff()*.05);
 const cpuErr=()=>Math.max(6,70-eff()*7);
 
 /* ================= física ================= */
@@ -322,13 +322,14 @@ function playerTouch(){
   const spike=P.air&&B.y<=hy+14&&high>90;
 
   if(spike){
-    const sp=660;
+    const sp=680;
     let a=clamp(.5+.3*clamp(dx/34,-1,1)+.4*d,-.15,1.1);
     let vx=sp*Math.cos(a),vy=sp*Math.sin(a);
     for(let i=0;i<40&&!clearsNet(B.x,B.y,vx,vy)&&a>-.15;i++){
       a-=.04;vx=sp*Math.cos(a);vy=sp*Math.sin(a);
     }
     B.vx=vx;B.vy=vy;B.lastSpike=true;B.cpuTouched=false;
+    if(Math.random()<Math.max(.08,.28-eff()*.03))C.err=(Math.random()<.5?-1:1)*rand(62,100);   // erra a leitura
     addScore(5,'Cortada!',B.x,B.y-24,'#ffc145');
     shake=6;ring(B.x,B.y,'#ffc145',58);burst(B.x,B.y,12,'#fff3b0',220,0);
     Snd.spike();
@@ -346,7 +347,9 @@ function playerTouch(){
 /* ================= adversário ================= */
 function updateCPU(dt){
   C.swing=Math.max(0,C.swing-dt);
-  let target=C.home;
+  C.pt+=dt;
+  // sem bola para defender, ele anda de um lado para o outro da quadra dele
+  let target=clamp(C.home+Math.sin(C.pt*1.1)*52+Math.sin(C.pt*2.7)*22,NET_X+30,W-26);
   if(state==='play'&&B.live){
     if(C.reactT>0)C.reactT-=dt;
     else{
