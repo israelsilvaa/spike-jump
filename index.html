@@ -46,6 +46,10 @@ button{font-family:inherit}
 .mute.off .x{display:block}
 .mute.off .wave{display:none}
 .mute[hidden]{display:none}
+h3{margin:14px 0 2px;font-weight:400;font-size:22px;color:var(--sun)}
+.keybox{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:13px;line-height:1.35;word-break:break-all;text-align:left;
+  background:var(--deep);border:2px solid #6d4fd0;border-radius:12px;padding:8px 10px;margin:10px 0;color:var(--mist);-webkit-user-select:text;user-select:text}
+#inKey{font-size:14px;margin:8px 0 10px}
 .pausebtn{right:auto;left:8px}
 .pausebtn svg{stroke:none}
 
@@ -135,7 +139,7 @@ input{width:100%;font:inherit;font-size:26px;text-align:center;padding:10px;bord
         <button class="cta alt" id="btnRank" type="button">Ranking</button>
         <button class="cta alt" id="btnSkins" type="button">Skins</button>
       </div>
-      <button class="ghost" id="btnName" type="button">Trocar nome</button>
+      <div style="display:flex;justify-content:center;gap:6px"><button class="ghost" id="btnName" type="button">Trocar nome</button><button class="ghost" id="btnKey" type="button">Minha chave</button></div>
     </div></div>
 
     <div id="ovName" class="ov"><div class="card">
@@ -178,6 +182,19 @@ input{width:100%;font:inherit;font-size:26px;text-align:center;padding:10px;bord
       <div class="row">
         <button class="cta" id="btnSkinsOk" type="button">Pronto</button>
       </div>
+    </div></div>
+
+    <div id="ovKey" class="ov"><div class="card">
+      <h2>Minha chave</h2>
+      <p class="small">Esta chave de 64 caracteres é a sua conta no ranking. Guarde em um lugar seguro: quem tiver a chave controla o seu recorde.</p>
+      <div class="keybox" id="keyBox"></div>
+      <div class="row"><button class="cta" id="btnKeyCopy" type="button">Copiar chave</button></div>
+      <h3>Recuperar minha conta</h3>
+      <p class="small">Perdeu o acesso? Cole aqui a sua chave. Isso troca a conta deste aparelho.</p>
+      <input id="inKey" type="text" placeholder="Cole sua chave aqui" aria-label="Sua chave" autocomplete="off" autocapitalize="off" spellcheck="false">
+      <div class="row"><button class="cta alt" id="btnKeyRestore" type="button">Recuperar</button></div>
+      <p class="small" id="keyMsg" role="status" style="min-height:20px"></p>
+      <button class="ghost" id="btnKeyClose" type="button">Voltar</button>
     </div></div>
 
     <div id="ovPause" class="ov"><div class="card">
@@ -814,7 +831,7 @@ async function finish(){
 }
 
 /* ================= painéis ================= */
-const OVS=['ovMenu','ovName','ovOver','ovRank','ovSkins','ovPause'];
+const OVS=['ovMenu','ovName','ovOver','ovRank','ovSkins','ovPause','ovKey'];
 function showOv(id){OVS.forEach(o=>$(o).classList.toggle('show',o===id))}
 function hideOv(){OVS.forEach(o=>$(o).classList.remove('show'))}
 
@@ -874,6 +891,48 @@ $('btnSkinsOk').addEventListener('click',()=>{
 });
 document.querySelectorAll('#skTabs .tab').forEach(b=>b.addEventListener('click',()=>{skTab=b.dataset.k;renderSkins()}));
 $('btnName').addEventListener('click',()=>askName('menu'));
+
+/* ================= minha chave (ver, copiar e recuperar) ================= */
+const keyMsg=t=>{$('keyMsg').textContent=t||''};
+function openKey(){
+  $('keyBox').textContent=hash||'Você ainda não tem uma chave. Ela é criada quando você entra na quadra pela primeira vez.';
+  $('btnKeyCopy').disabled=!hash;
+  $('inKey').value='';keyMsg('');
+  showOv('ovKey');
+}
+async function copyText(t){
+  try{await navigator.clipboard.writeText(t);return true}catch(e){}
+  try{
+    const ta=document.createElement('textarea');ta.value=t;ta.style.cssText='position:fixed;top:0;left:0;opacity:0';
+    document.body.appendChild(ta);ta.focus();ta.select();
+    const ok=document.execCommand('copy');ta.remove();return ok;
+  }catch(e){return false}
+}
+$('btnKey').addEventListener('click',openKey);
+$('btnKeyClose').addEventListener('click',()=>{$('inKey').blur();showMenu()});
+$('btnKeyCopy').addEventListener('click',async()=>{
+  keyMsg(await copyText(hash)?'Chave copiada!':'Não deu para copiar. Segure o dedo sobre a chave e copie à mão.');
+});
+$('btnKeyRestore').addEventListener('click',async()=>{
+  const h=$('inKey').value.replace(/\s+/g,'').toLowerCase();
+  if(!/^[0-9a-f]{64}$/.test(h)){keyMsg('Chave inválida. Ela tem 64 caracteres (números e letras de a até f).');return}
+  keyMsg('Procurando…');
+  try{
+    const d=await api('POST',{hash:h,recover:true});
+    hash=h;LS.set('sj_hash',hash);
+    pid=d.pid;LS.set('sj_pid',pid);
+    if(d.name){pname=d.name;LS.set('sj_name',pname)}
+    best=sbest=+d.best||0;blevel=+d.level||0;blball=d.ball||'';
+    LS.set('sj_best',best);LS.set('sj_sbest',sbest);LS.set('sj_blevel',blevel);LS.set('sj_bball',blball);
+    LS.set('sj_pending',0);LS.set('sj_pendlvl',0);LS.set('sj_pendball','');LS.set('sj_dirty','0');LS.set('sj_sentball',blball);
+    setBoard(d);
+    $('keyBox').textContent=hash;$('btnKeyCopy').disabled=false;$('inKey').value='';
+    refreshMenu();
+    keyMsg('Pronto! Conta de '+pname+' recuperada ('+best+' pontos).');
+  }catch(e){
+    keyMsg(String(e&&e.message)==='http 404'?'Essa chave não foi encontrada no ranking.':'Sem conexão. Tente de novo.');
+  }
+});
 $('btnAgain').addEventListener('click',()=>{Snd.init();startRun()});
 $('btnRank2').addEventListener('click',()=>openRank('ovOver'));
 $('btnMenu').addEventListener('click',showMenu);

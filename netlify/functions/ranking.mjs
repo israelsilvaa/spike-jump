@@ -116,6 +116,24 @@ export default async (req) => {
       const hash = String(body?.hash || "");
       if (!/^[a-f0-9]{64}$/.test(hash)) return reply({ error: "hash inválido" }, 400);
 
+      // recuperar a conta com a chave (hash): só lê, não altera nada
+      if (body?.recover === true) {
+        const rkey = sha256(hash);
+        const found = await store.get(rkey, { type: "json" });
+        if (!found) return reply({ error: "chave não encontrada" }, 404);
+        const rpid = rkey.slice(0, 10);
+        const rrows = await loadRows(store, true);
+        return reply({
+          ok: true,
+          pid: rpid,
+          name: found.name,
+          best: found.best,
+          level: found.level || 0,
+          ball: found.ball || "",
+          ...view(rrows, rpid),
+        });
+      }
+
       const score = Math.floor(Number(body?.score));
       if (!Number.isFinite(score) || score < 0 || score > MAX_SCORE) {
         return reply({ error: "pontuação inválida" }, 400);
