@@ -39,6 +39,16 @@ function cleanName(v) {
   return n.length >= 2 ? n : "Jogador";
 }
 
+// grava e confere se realmente ficou salvo (até 3 tentativas)
+async function save(store, key, obj) {
+  for (let i = 0; i < 3; i++) {
+    await store.setJSON(key, obj);
+    const chk = await store.get(key, { type: "json" }).catch(() => null);
+    if (chk && chk.best === obj.best && chk.name === obj.name && chk.ball === obj.ball) return;
+  }
+  throw new Error("não foi possível confirmar a gravação");
+}
+
 const sortRows = (rows) => rows.sort((a, b) => b.best - a.best || a.at - b.at);
 
 async function loadRows(store, force = false) {
@@ -125,7 +135,7 @@ export default async (req) => {
         // só entra no ranking quem fez ponto
         if (score > 0) {
           rec = { name, best: score, level, ball, at: Date.now() };
-          await store.setJSON(key, rec);
+          await save(store, key, rec);
           improved = true;
         }
       } else {
@@ -134,9 +144,13 @@ export default async (req) => {
         if (score > cur.best) {
           next.best = score;
           next.level = level; // nível e bola ficam gravados junto com o recorde
-          next.ball = ball;
+          next.ball = ball || cur.ball || "";
           next.at = Date.now();
           improved = true;
+          changed = true;
+        }
+        if (ball && ball !== cur.ball) {
+          next.ball = ball; // a bola do ranking acompanha a skin usada, mesmo sem bater recorde
           changed = true;
         }
         if (name !== cur.name) {
@@ -144,7 +158,7 @@ export default async (req) => {
           changed = true;
         }
         if (changed) {
-          await store.setJSON(key, next);
+          await save(store, key, next);
           rec = next;
         }
       }
