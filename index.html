@@ -45,6 +45,9 @@ button{font-family:inherit}
 .mute .x{display:none}
 .mute.off .x{display:block}
 .mute.off .wave{display:none}
+.mute[hidden]{display:none}
+.pausebtn{right:auto;left:8px}
+.pausebtn svg{stroke:none}
 
 /* painéis */
 .ov{position:absolute;inset:0;display:none;align-items:center;justify-content:center;padding:14px;background:rgba(27,16,56,.72)}
@@ -77,8 +80,9 @@ input{width:100%;font:inherit;font-size:26px;text-align:center;padding:10px;bord
 
 /* ranking */
 .list{list-style:none;margin:10px 0 6px;padding:0;max-height:46vh;overflow-y:auto;text-align:left;touch-action:pan-y}
-.list li{display:grid;grid-template-columns:36px 1fr 46px 54px;gap:4px;align-items:center;padding:8px 10px;margin:0 0 5px;
+.list li{display:grid;grid-template-columns:34px 30px 1fr 44px 52px;gap:4px;align-items:center;padding:8px 10px;margin:0 0 5px;
   border-radius:12px;background:rgba(255,255,255,.07);font-size:18px}
+.list li canvas{width:30px;height:30px;justify-self:center;pointer-events:none}
 .list li .lv{font-size:13px;color:#b9a6e8;text-align:right}
 .list li>span:last-child{text-align:right}
 .list li.me .lv{color:#4b2fa0}
@@ -109,6 +113,10 @@ input{width:100%;font:inherit;font-size:26px;text-align:center;padding:10px;bord
 
     <button id="btnMute" class="mute" type="button" aria-label="Ligar ou desligar o som">
       <svg viewBox="0 0 24 24"><path d="M4 9v6h4l5 4V5L8 9H4z" stroke="none"/><path class="wave" d="M16 8.5a5 5 0 0 1 0 7M18.5 6a8.5 8.5 0 0 1 0 12" fill="none" stroke-width="2" stroke-linecap="round"/><path class="x" d="M16 9l5 6M21 9l-5 6" fill="none" stroke-width="2.4" stroke-linecap="round"/></svg>
+    </button>
+
+    <button id="btnPause" class="mute pausebtn" type="button" aria-label="Pausar o jogo" hidden>
+      <svg viewBox="0 0 24 24"><path d="M7 5h3.6v14H7zM13.4 5H17v14h-3.6z"/></svg>
     </button>
 
     <div id="ovMenu" class="ov show"><div class="card">
@@ -172,6 +180,15 @@ input{width:100%;font:inherit;font-size:26px;text-align:center;padding:10px;bord
       </div>
     </div></div>
 
+    <div id="ovPause" class="ov"><div class="card">
+      <h2>Pausado</h2>
+      <p class="rec" id="pzInfo"></p>
+      <div class="row" style="margin-top:12px">
+        <button class="cta" id="btnResume" type="button">Continuar</button>
+      </div>
+      <button class="ghost" id="btnQuit" type="button">Encerrar partida</button>
+    </div></div>
+
     <div id="ovRank" class="ov"><div class="card">
       <h2>Ranking</h2>
       <ol class="list" id="rankList"></ol>
@@ -221,6 +238,7 @@ let pname=LS.get('sj_name','');
 let pid=LS.get('sj_pid','');
 let best=+LS.get('sj_best',0)||0;        // melhor pontuação neste aparelho
 let blevel=+LS.get('sj_blevel',0)||0;    // nível alcançado na partida do recorde
+let blball=LS.get('sj_bball','');         // skin de bola usada na partida do recorde
 let sbest=+LS.get('sj_sbest',0)||0;      // melhor pontuação que o servidor já confirmou
 let spikedEver=LS.get('sj_spiked')==='1';
 let gamesPlayed=+LS.get('sj_games',0)||0;
@@ -339,6 +357,8 @@ let jumpBuf=0, shake=0, netWob=0, netT=0, bannerT=0, bannerTxt='';
 let particles=[], rings=[], popups=[], trail=[];
 let fxTime=0, embers=[], wxDrops=[], flash=0, flashT=6;
 let touchDir=0, kL=false, kR=false;
+let paused=false;
+let board=[];   // recordes de todos os jogadores (crescente), para a meta no HUD
 
 const dirNow=()=>touchDir||((kR?1:0)-(kL?1:0));
 const mult=()=>Math.min(5,1+streak);
@@ -384,8 +404,10 @@ function ring(x,y,color,max){rings.push({x,y,r:6,max:max||46,age:0,life:.3,color
 /* ================= pontuação ================= */
 function addScore(base,label,x,y,color){
   const v=Math.round(base*mult());
+  const prev=score;
   score+=v;
   pop((label?label+' ':'')+'+'+v,x,y,color,22);
+  checkPass(prev);
   return v;
 }
 
@@ -529,6 +551,7 @@ function land(){
   if(cpuSide){
     const ace=B.lastSpike&&!B.cpuTouched&&B.last==='player';
     const m=mult();
+    const prevScore=score;
     const total=Math.round((100+Math.min(rally,10)*20+(ace?100:0))*m);
     score+=total;
     pop((ace?'ACE! ':'Ponto! ')+'+'+total,B.x,GROUND-80,ace?'#ffc145':'#fff',ace?30:26,1.4);
@@ -538,6 +561,7 @@ function land(){
       if(lives<MAX_LIVES){lives++;pop('+1 vida',P.x,GROUND-110,'#7dffb5',22,1.4)}
       else{score+=FULL_BONUS;pop('Vidas cheias! +'+FULL_BONUS,P.x,GROUND-110,'#7dffb5',20,1.4)}
     }
+    checkPass(prevScore);
     const nl=1+Math.floor(pointsWon/3);
     if(nl>level){level=nl;bannerTxt='Nível '+level;bannerT=1.4;Snd.level()}
   }else{
@@ -549,7 +573,7 @@ function land(){
 
 /* ================= fluxo ================= */
 function startRun(){
-  hideOv();
+  hideOv();paused=false;loadBoard();
   score=0;lives=MAX_LIVES;level=1;pointsWon=0;streak=0;touches=0;rally=0;
   P.x=90;P.y=GROUND;P.vy=0;P.vx=0;P.air=false;
   C.x=C.home;C.reactT=0;
@@ -615,39 +639,85 @@ async function api(method,body,qs){
 }
 
 // envia a pontuação (se for melhor que a já confirmada) e devolve o ranking
-async function syncScore(sc,lvl){
+async function syncScore(sc,lvl,ball){
   const pending=+LS.get('sj_pending',0)||0;
   const pendLvl=+LS.get('sj_pendlvl',0)||0;
+  const pendBall=LS.get('sj_pendball','');
   const useP=pending>sc;
   const send=useP?pending:sc;
   const sl=useP?pendLvl:(lvl||0);
+  const sb=useP?pendBall:(ball||skin.ball);
   if(send>0&&(send>sbest||!pid)){
     try{
-      const data=await api('POST',{hash,name:pname,score:send,level:sl});
+      const data=await api('POST',{hash,name:pname,score:send,level:sl,ball:sb});
       if(data.pid){pid=data.pid;LS.set('sj_pid',pid)}
       sbest=Math.max(sbest,data.best||0);LS.set('sj_sbest',sbest);
-      LS.set('sj_pending',0);LS.set('sj_pendlvl',0);
+      LS.set('sj_pending',0);LS.set('sj_pendlvl',0);LS.set('sj_pendball','');
       return data;
     }catch(e){
-      LS.set('sj_pending',send);LS.set('sj_pendlvl',sl);
+      LS.set('sj_pending',send);LS.set('sj_pendlvl',sl);LS.set('sj_pendball',sb);
       throw e;
     }
   }
   return api('GET',null,pid?'?pid='+pid:'');
 }
 
+// ícone da bola (skin usada na hora em que o jogador salvou o recorde)
+const ballIcons={};
+function ballIcon(id){
+  const sk=BALLS.find(b=>b.id===id);
+  if(!sk)return null;
+  let src=ballIcons[id];
+  if(!src){
+    src=document.createElement('canvas');src.width=src.height=64;
+    withCtx(src.getContext('2d'),()=>drawBall(32,32,.4,1.5,sk));
+    ballIcons[id]=src;
+  }
+  const c=document.createElement('canvas');c.width=c.height=64;
+  c.getContext('2d').drawImage(src,0,0);
+  return c;
+}
+
 function rowEl(r,me){
   const li=document.createElement('li');
   if(me)li.className='me';
   const a=document.createElement('span');a.className='pos';a.textContent='#'+r.rank;
+  const bid=r.ball||(me&&r.best===best?blball:'');
+  const bi=bid?ballIcon(bid):null;
+  const bl=bi||document.createElement('span');
+  if(bi)bi.setAttribute('aria-label','Bola '+bid);
   const b=document.createElement('span');b.className='nm';b.textContent=r.name;
   const lv=+r.level||(me&&r.best===best?blevel:0);   // sem nível no servidor, usa o salvo no aparelho
   const l=document.createElement('span');l.className='lv';l.textContent=lv?'Nív '+lv:'';
   const c=document.createElement('span');c.textContent=String(r.best);
-  li.append(a,b,l,c);
+  li.append(a,bl,b,l,c);
   return li;
 }
+
+// recordes de todos, usados para mostrar a próxima meta durante a partida
+function setBoard(d){
+  if(!d)return;
+  const rows=(d.top||[]).slice();
+  if(d.me&&!rows.some(r=>r.pid===d.me.pid))rows.push(d.me);
+  board=rows.map(r=>({pid:r.pid,name:String(r.name||''),best:+r.best||0}))
+    .filter(r=>r.best>0).sort((a,b)=>a.best-b.best);
+}
+function loadBoard(){api('GET',null,pid?'?pid='+pid:'').then(setBoard).catch(()=>{})}
+function nextRecord(){for(const r of board)if(r.best>score)return r;return null}
+const isMe=r=>!!pid&&r.pid===pid;
+// avisa quando a pontuação da partida passa o recorde de alguém
+function checkPass(prev){
+  if(!board.length||score<=prev)return;
+  let hit=null;
+  for(const r of board)if(r.best>prev&&r.best<=score)hit=r;   // o mais alto que foi ultrapassado
+  if(!hit)return;
+  const top=board[board.length-1]===hit&&!board.some(r=>r.best>score);
+  pop(top?'Novo #1 do ranking!':isMe(hit)?'Passou o seu recorde!':'Passou '+hit.name+'!',W/2,250,top?'#ffc145':'#7dffb5',top?30:26,2.2);
+  Snd.level();
+}
+
 function renderBoard(data){
+  setBoard(data);
   const list=$('rankList');list.textContent='';
   const rows=data.top||[];
   if(!rows.length){
@@ -684,14 +754,15 @@ async function finish(){
   gamesPlayed++;LS.set('sj_games',gamesPlayed);
   const reached=level;
   const record=score>best;
-  if(record){best=score;blevel=reached;LS.set('sj_best',best);LS.set('sj_blevel',blevel)}
+  if(record){best=score;blevel=reached;blball=skin.ball;LS.set('sj_best',best);LS.set('sj_blevel',blevel);LS.set('sj_bball',blball)}
   $('ovScore').textContent=score;
   $('ovLevel').textContent='nível '+reached;
   const st=$('ovStatus');
   st.textContent='Enviando pontuação…';
   showOv('ovOver');
   try{
-    const data=await syncScore(score,reached);
+    const data=await syncScore(score,reached,skin.ball);
+    setBoard(data);
     const me=data.me;
     st.textContent='';
     if(me){
@@ -709,7 +780,7 @@ async function finish(){
 }
 
 /* ================= painéis ================= */
-const OVS=['ovMenu','ovName','ovOver','ovRank','ovSkins'];
+const OVS=['ovMenu','ovName','ovOver','ovRank','ovSkins','ovPause'];
 function showOv(id){OVS.forEach(o=>$(o).classList.toggle('show',o===id))}
 function hideOv(){OVS.forEach(o=>$(o).classList.remove('show'))}
 
@@ -718,6 +789,23 @@ function refreshMenu(){
   $('menuBest').textContent=best>0?'Seu recorde: '+best+(blevel?' (nível '+blevel+')':''):'Faça seu primeiro ponto!';
 }
 function showMenu(){state='menu';refreshMenu();showOv('ovMenu')}
+
+/* ================= pausa ================= */
+const canPause=()=>state==='serve'||state==='play'||state==='point';
+function setPause(v){
+  if(v===paused||(v&&!canPause()))return;
+  paused=v;
+  jumpBuf=0;kL=kR=false;setDir(0);padId=null;
+  if(v){
+    $('pzInfo').textContent=score+' pontos · nível '+level;
+    showOv('ovPause');
+  }else{
+    hideOv();lastT=performance.now();
+  }
+}
+$('btnPause').addEventListener('click',()=>setPause(true));
+$('btnResume').addEventListener('click',()=>setPause(false));
+$('btnQuit').addEventListener('click',()=>{paused=false;finish()});
 
 let nameThen='start';
 function askName(then){
@@ -794,6 +882,7 @@ window.addEventListener('keydown',e=>{
   if(k==='ArrowLeft'||k==='a'||k==='A'){kL=true;e.preventDefault()}
   else if(k==='ArrowRight'||k==='d'||k==='D'){kR=true;e.preventDefault()}
   else if(k===' '||k==='ArrowUp'||k==='w'||k==='W'){if(!e.repeat)jumpBuf=.14;e.preventDefault()}
+  else if(k==='p'||k==='P'||k==='Escape'){if(!e.repeat)setPause(!paused);e.preventDefault()}
   else if(k==='Enter'&&state==='menu'&&$('ovMenu').classList.contains('show'))$('btnPlay').click();
 });
 window.addEventListener('keyup',e=>{
@@ -1415,6 +1504,13 @@ function hint(){
 function hud(){
   txt(String(score),14,44,40,'#fff');
   txt('Nível '+level,14,64,16,'#ffd9a0');
+  if(board.length&&state!=='menu'&&state!=='over'){
+    const n=nextRecord();
+    if(n){
+      txt('Próximo: '+(isMe(n)?'seu recorde':n.name),14,84,15,'#b9f5d0','left');
+      txt(n.best+' pts · faltam '+(n.best-score),14,101,14,'#b9f5d0','left');
+    }else txt('Você lidera o ranking!',14,84,15,'#7dffb5','left');
+  }
   for(let i=0;i<MAX_LIVES;i++){
     const x=W-18-i*24,y=26;
     if(i<lives)drawBall(x,y,0,.8);
@@ -1482,7 +1578,10 @@ let lastT=performance.now();
 function frame(now){
   const dt=Math.min(.033,Math.max(0,(now-lastT)/1000));
   lastT=now;
-  update(dt);draw();
+  if(!paused)update(dt);
+  const showP=canPause()&&!paused;
+  if(showP===$('btnPause').hidden)$('btnPause').hidden=!showP;
+  draw();
   if($('ovSkins').classList.contains('show'))paintPreview();
   requestAnimationFrame(frame);
 }
@@ -1490,7 +1589,7 @@ function frame(now){
 window.addEventListener('resize',resize);
 window.addEventListener('orientationchange',()=>setTimeout(resize,150));
 if(window.ResizeObserver)new ResizeObserver(resize).observe($('stage'));
-document.addEventListener('visibilitychange',()=>{lastT=performance.now()});
+document.addEventListener('visibilitychange',()=>{if(document.hidden)setPause(true);lastT=performance.now()});
 
 if(document.fonts&&document.fonts.load)document.fonts.load('20px "Lilita One"').catch(()=>{});
 refreshMenu();
